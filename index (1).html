@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DQN Space Invaders</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #060a0f;
+    --panel: #0b1018;
+    --border: #1a2a3a;
+    --accent: #00e5ff;
+    --accent2: #ff3c6e;
+    --accent3: #b8ff3c;
+    --text: #c8dbe8;
+    --text-dim: #4a6070;
+    --glow: 0 0 12px rgba(0,229,255,0.35);
+    --glow2: 0 0 12px rgba(255,60,110,0.35);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Scanline overlay */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.08) 2px, rgba(0,0,0,0.08) 4px);
+    pointer-events: none; z-index: 9999;
+  }
+
+  /* Stars background */
+  #stars { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+
+  .app { position: relative; z-index: 1; max-width: 1300px; margin: 0 auto; padding: 20px 16px; }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid var(--border); padding-bottom: 14px; margin-bottom: 20px;
+  }
+  .logo { display: flex; align-items: baseline; gap: 10px; }
+  .logo h1 { font-family: 'Orbitron', sans-serif; font-size: 22px; font-weight: 900; color: var(--accent); letter-spacing: 0.08em; text-shadow: var(--glow); }
+  .logo span { font-size: 11px; color: var(--text-dim); letter-spacing: 0.12em; }
+  .header-badges { display: flex; gap: 8px; }
+  .badge { font-size: 10px; padding: 3px 9px; border-radius: 2px; letter-spacing: 0.1em; border: 1px solid; }
+  .badge-cyan { border-color: var(--accent); color: var(--accent); }
+  .badge-green { border-color: var(--accent3); color: var(--accent3); }
+  .badge-red { border-color: var(--accent2); color: var(--accent2); }
+
+  .main-grid {
+    display: grid;
+    grid-template-columns: 1fr 320px 260px;
+    gap: 16px;
+    align-items: start;
+  }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 14px;
+  }
+  .panel-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 10px; letter-spacing: 0.15em;
+    color: var(--text-dim); text-transform: uppercase;
+    margin-bottom: 12px; padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .panel-title::before { content: '//'; color: var(--accent); }
+
+  /* Game canvas */
+  #gc {
+    display: block; width: 100%;
+    image-rendering: pixelated;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    box-shadow: inset 0 0 40px rgba(0,0,0,0.6), 0 0 30px rgba(0,229,255,0.06);
+  }
+
+  /* Controls */
+  .controls { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .btn {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 10px; font-weight: 700;
+    letter-spacing: 0.12em; padding: 8px 14px;
+    border: 1px solid var(--border); border-radius: 2px;
+    background: transparent; color: var(--text);
+    cursor: pointer; transition: all 0.15s;
+    text-transform: uppercase;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); box-shadow: var(--glow); }
+  .btn.primary { border-color: var(--accent); color: var(--accent); }
+  .btn.danger { border-color: var(--accent2); color: var(--accent2); }
+  .btn.danger:hover { box-shadow: var(--glow2); }
+
+  .slider-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; font-size: 11px; color: var(--text-dim); }
+  .slider-row input[type=range] {
+    flex: 1; -webkit-appearance: none; height: 2px;
+    background: var(--border); border-radius: 1px; outline: none;
+  }
+  .slider-row input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 12px; height: 12px;
+    border-radius: 50%; background: var(--accent);
+    cursor: pointer; box-shadow: var(--glow);
+  }
+  .slider-val { min-width: 28px; color: var(--accent); font-size: 12px; }
+
+  /* Stats */
+  .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+  .stat-card {
+    background: rgba(0,229,255,0.03);
+    border: 1px solid var(--border); border-radius: 2px;
+    padding: 8px 10px;
+  }
+  .stat-label { font-size: 9px; letter-spacing: 0.15em; color: var(--text-dim); text-transform: uppercase; margin-bottom: 3px; }
+  .stat-val { font-family: 'Orbitron', sans-serif; font-size: 18px; font-weight: 700; color: var(--accent); }
+  .stat-sub { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+  .stat-val.green { color: var(--accent3); }
+  .stat-val.red { color: var(--accent2); }
+
+  /* Epsilon bar */
+  .eps-bar-wrap { margin-bottom: 12px; }
+  .eps-bar-label { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-dim); margin-bottom: 4px; }
+  .eps-bar-track { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .eps-bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent2), var(--accent)); border-radius: 2px; transition: width 0.3s; }
+
+  /* Neural network canvas */
+  #nn-canvas {
+    width: 100%; display: block;
+    border: 1px solid var(--border); border-radius: 2px;
+    margin-bottom: 12px; background: rgba(0,0,0,0.3);
+  }
+
+  /* Loss chart */
+  #loss-canvas { width: 100%; display: block; border: 1px solid var(--border); border-radius: 2px; background: rgba(0,0,0,0.3); margin-bottom: 12px; }
+
+  /* Reward chart */
+  #reward-canvas { width: 100%; display: block; border: 1px solid var(--border); border-radius: 2px; background: rgba(0,0,0,0.3); margin-bottom: 12px; }
+
+  /* Log */
+  .log-wrap {
+    background: rgba(0,0,0,0.4); border: 1px solid var(--border);
+    border-radius: 2px; padding: 8px; height: 110px; overflow-y: auto;
+    font-size: 10px; line-height: 1.7;
+  }
+  .log-wrap::-webkit-scrollbar { width: 3px; }
+  .log-wrap::-webkit-scrollbar-track { background: transparent; }
+  .log-wrap::-webkit-scrollbar-thumb { background: var(--border); }
+  .log-line { color: var(--text-dim); }
+  .log-line .t { color: var(--accent); }
+  .log-line .g { color: var(--accent3); }
+  .log-line .r { color: var(--accent2); }
+
+  /* Q-value display */
+  .q-vals { display: flex; gap: 6px; margin-bottom: 10px; }
+  .q-card {
+    flex: 1; background: rgba(0,0,0,0.3); border: 1px solid var(--border);
+    border-radius: 2px; padding: 6px 4px; text-align: center; font-size: 9px;
+    transition: all 0.1s;
+  }
+  .q-card.active { border-color: var(--accent); background: rgba(0,229,255,0.07); box-shadow: var(--glow); }
+  .q-label { color: var(--text-dim); letter-spacing: 0.08em; margin-bottom: 2px; }
+  .q-num { font-family: 'Orbitron', sans-serif; font-size: 11px; color: var(--accent); }
+
+  /* Model section */
+  .model-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .model-info { font-size: 10px; color: var(--text-dim); margin-top: 8px; line-height: 1.6; }
+  .model-info span { color: var(--accent); }
+
+  /* Status bar */
+  .status-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 10px; color: var(--text-dim); padding: 8px 0;
+    border-top: 1px solid var(--border); margin-top: 16px;
+    letter-spacing: 0.06em;
+  }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+  .dot-green { background: var(--accent3); box-shadow: 0 0 6px var(--accent3); animation: pulse 1.5s infinite; }
+  .dot-red { background: var(--accent2); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  /* Mode toggle */
+  .mode-toggle { display: flex; gap: 0; margin-bottom: 12px; }
+  .mode-btn {
+    flex: 1; font-family: 'Orbitron', sans-serif; font-size: 9px;
+    letter-spacing: 0.1em; padding: 6px 8px; border: 1px solid var(--border);
+    background: transparent; color: var(--text-dim); cursor: pointer;
+    text-transform: uppercase; transition: all 0.15s;
+  }
+  .mode-btn:first-child { border-radius: 2px 0 0 2px; }
+  .mode-btn:last-child { border-radius: 0 2px 2px 0; border-left: none; }
+  .mode-btn.on { background: rgba(0,229,255,0.1); color: var(--accent); border-color: var(--accent); }
+
+  @media (max-width: 900px) {
+    .main-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="stars"></canvas>
+
+<div class="app">
+  <header>
+    <div class="logo">
+      <h1>DQN AGENT</h1>
+      <span>SPACE INVADERS // DEEP Q-NETWORK</span>
+    </div>
+    <div class="header-badges">
+      <span class="badge badge-cyan" id="status-badge">IDLE</span>
+      <span class="badge badge-green">v1.0</span>
+      <span class="badge badge-red">RL</span>
+    </div>
+  </header>
+
+  <div class="main-grid">
+
+    <!-- LEFT: Game -->
+    <div>
+      <div class="panel" style="padding:12px;">
+        <div class="panel-title">Game Environment</div>
+        <div class="controls">
+          <button class="btn primary" id="btn-train">▶ Train</button>
+          <button class="btn" id="btn-pause">⏸ Pause</button>
+          <button class="btn danger" id="btn-reset">↺ Reset</button>
+        </div>
+        <div class="slider-row">
+          <span>Speed</span>
+          <input type="range" id="speed" min="1" max="30" value="8" step="1">
+          <span class="slider-val" id="speed-val">8×</span>
+        </div>
+        <canvas id="gc" width="480" height="480"></canvas>
+      </div>
+    </div>
+
+    <!-- MIDDLE: Stats + Q-vals + Charts -->
+    <div>
+      <div class="panel" style="margin-bottom:12px;">
+        <div class="panel-title">Agent Stats</div>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">Episode</div>
+            <div class="stat-val" id="ep">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Score</div>
+            <div class="stat-val green" id="score">0</div>
+            <div class="stat-sub">Best: <span id="best" style="color:var(--accent3)">0</span></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Total Steps</div>
+            <div class="stat-val" id="steps">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Replay Mem</div>
+            <div class="stat-val" id="replay">0</div>
+            <div class="stat-sub">/ 3000</div>
+          </div>
+        </div>
+
+        <div class="eps-bar-wrap">
+          <div class="eps-bar-label">
+            <span>Epsilon (explore rate)</span>
+            <span id="eps-text" style="color:var(--accent)">1.000</span>
+          </div>
+          <div class="eps-bar-track"><div class="eps-bar-fill" id="eps-bar" style="width:100%"></div></div>
+        </div>
+
+        <div class="panel-title">Q-Values (live)</div>
+        <div class="q-vals">
+          <div class="q-card" id="q0"><div class="q-label">← LEFT</div><div class="q-num" id="qv0">0.00</div></div>
+          <div class="q-card" id="q1"><div class="q-label">RIGHT →</div><div class="q-num" id="qv1">0.00</div></div>
+          <div class="q-card" id="q2"><div class="q-label">FIRE</div><div class="q-num" id="qv2">0.00</div></div>
+          <div class="q-card" id="q3"><div class="q-label">IDLE</div><div class="q-num" id="qv3">0.00</div></div>
+        </div>
+
+        <div class="panel-title" style="margin-top:4px;">Avg Loss</div>
+        <canvas id="loss-canvas" height="70"></canvas>
+
+        <div class="panel-title">Episode Rewards</div>
+        <canvas id="reward-canvas" height="70"></canvas>
+      </div>
+    </div>
+
+    <!-- RIGHT: Neural Network + Model + Log -->
+    <div>
+      <div class="panel" style="margin-bottom:12px;">
+        <div class="panel-title">Neural Network</div>
+        <canvas id="nn-canvas" height="180"></canvas>
+
+        <div class="panel-title">Architecture</div>
+        <div class="model-info">
+          <div>Input: <span>20 neurons</span> (state)</div>
+          <div>Hidden 1: <span>64 neurons</span> (ReLU)</div>
+          <div>Hidden 2: <span>64 neurons</span> (ReLU)</div>
+          <div>Output: <span>4 neurons</span> (Q-values)</div>
+          <div style="margin-top:6px;">LR: <span>0.001</span> &nbsp; γ: <span>0.95</span></div>
+          <div>Batch: <span>32</span> &nbsp; Target sync: <span>100</span></div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-bottom:12px;">
+        <div class="panel-title">Model Storage</div>
+        <div class="model-actions">
+          <button class="btn" id="btn-save" style="font-size:9px;padding:6px 10px;">💾 Save</button>
+          <button class="btn" id="btn-load" style="font-size:9px;padding:6px 10px;">📂 Load</button>
+          <button class="btn" id="btn-export" style="font-size:9px;padding:6px 10px;">⬇ Export</button>
+        </div>
+        <div class="model-info" id="model-info">No model saved.</div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Training Log</div>
+        <div class="log-wrap" id="log"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="status-bar">
+    <div><span class="status-dot dot-red" id="status-dot"></span><span id="status-text">System idle — press Train to begin</span></div>
+    <div id="fps-counter">FPS: —</div>
+  </div>
+</div>
+
+<!-- Stars script -->
+<script>
+(function() {
+  const c = document.getElementById('stars');
+  const ctx = c.getContext('2d');
+  let W, H, stars;
+  function resize() {
+    W = c.width = window.innerWidth;
+    H = c.height = window.innerHeight;
+    stars = Array.from({length: 120}, () => ({
+      x: Math.random()*W, y: Math.random()*H,
+      r: Math.random()*1.2+0.2, o: Math.random()*0.5+0.1,
+      speed: Math.random()*0.15+0.05
+    }));
+  }
+  resize(); window.addEventListener('resize', resize);
+  function draw() {
+    ctx.clearRect(0,0,W,H);
+    stars.forEach(s => {
+      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+      ctx.fillStyle = `rgba(200,219,232,${s.o})`; ctx.fill();
+      s.y += s.speed; if (s.y > H) { s.y = 0; s.x = Math.random()*W; }
+    });
+    requestAnimationFrame(draw);
+  }
+  draw();
+})();
+</script>
+
+<script>
+// ============================================================
+// DQN ENGINE
+// ============================================================
+const GW = 480, GH = 480;
+const gc = document.getElementById('gc');
+const gctx = gc.getContext('2d');
+
+const STATE_SIZE = 20, HIDDEN = 64;
+const LR = 0.001, GAMMA = 0.95;
+const EPS_START = 1.0, EPS_END = 0.05, EPS_DECAY = 0.994;
+const BATCH = 32, REPLAY_MAX = 3000, TARGET_SYNC = 100;
+
+function relu(x) { return x > 0 ? x : 0; }
+
+class Layer {
+  constructor(i, o) {
+    const sc = Math.sqrt(2/i);
+    this.W = Array.from({length:o}, () => Array.from({length:i}, () => (Math.random()-0.5)*sc));
+    this.b = Array(o).fill(0);
+    this.in = null; this.out = null;
+    this.dW = this.W.map(r => r.map(() => 0));
+    this.db = Array(o).fill(0);
+  }
+  fwd(x, act='relu') {
+    this.in = x.slice();
+    const o = this.W.map((row, i) => row.reduce((s,w,j) => s + w*x[j], this.b[i]));
+    this.out = act==='relu' ? o.map(relu) : o;
+    return this.out;
+  }
+  bwd(dOut, act='relu') {
+    const dA = act==='relu' ? dOut.map((d,i) => this.out[i]>0?d:0) : dOut;
+    dA.forEach((d,i) => { this.db[i] = d; this.in.forEach((v,j) => this.dW[i][j] = d*v); });
+    return this.in.map((_,j) => this.W.reduce((s,row,i) => s + row[j]*dA[i], 0));
+  }
+  step(lr) {
+    this.b = this.b.map((b,i) => b - lr*this.db[i]);
+    this.W = this.W.map((row,i) => row.map((w,j) => w - lr*this.dW[i][j]));
+  }
+  clone() {
+    const l = new Layer(this.W[0].length, this.W.length);
+    l.W = this.W.map(r => r.slice()); l.b = this.b.slice(); return l;
+  }
+}
+
+class Net {
+  constructor() { this.l1 = new Layer(STATE_SIZE,HIDDEN); this.l2 = new Layer(HIDDEN,HIDDEN); this.l3 = new Layer(HIDDEN,4); }
+  fwd(s) { return this.l3.fwd(this.l2.fwd(this.l1.fwd(s,'relu'),'relu'),'linear'); }
+  train(s, a, tgt) {
+    const q = this.fwd(s);
+    const dOut = [0,0,0,0]; dOut[a] = 2*(q[a]-tgt);
+    this.l1.bwd(this.l2.bwd(this.l3.bwd(dOut,'linear'),'relu'),'relu');
+    this.l1.step(LR); this.l2.step(LR); this.l3.step(LR);
+    return (q[a]-tgt)**2;
+  }
+  copyFrom(o) { this.l1 = o.l1.clone(); this.l2 = o.l2.clone(); this.l3 = o.l3.clone(); }
+  toJSON() { return {l1:{W:this.l1.W,b:this.l1.b},l2:{W:this.l2.W,b:this.l2.b},l3:{W:this.l3.W,b:this.l3.b}}; }
+  fromJSON(d) {
+    ['l1','l2','l3'].forEach(k => { this[k].W = d[k].W; this[k].b = d[k].b; });
+  }
+}
+
+// ============================================================
+// GAME ENGINE
+// ============================================================
+class SpaceInvaders {
+  constructor() { this.reset(); }
+  reset() {
+    this.px = GW/2-16; this.py = GH-50; this.pw = 32; this.ph = 16;
+    this.bullets = []; this.ebullets = [];
+    this.score = 0; this.alive = true; this.tick = 0;
+    this.fireCD = 0; this.dir = 1; this.eFire = 0;
+    this.aliens = [];
+    for (let r=0;r<4;r++) for (let c=0;c<9;c++)
+      this.aliens.push({x:20+c*48, y:45+r*36, w:28, h:18, alive:true, r});
+    this.shields = [70,170,270,370].map(x => ({x, y:GH-100, cells: Array(40).fill(true)}));
+  }
+
+  getState() {
+    const live = this.aliens.filter(a=>a.alive);
+    const near = [...live].sort((a,b)=>Math.hypot(a.x-this.px,a.y-this.py)-Math.hypot(b.x-this.px,b.y-this.py)).slice(0,3);
+    while(near.length<3) near.push({x:0,y:0});
+    const eb = this.ebullets.sort((a,b)=>b.y-a.y).slice(0,2);
+    while(eb.length<2) eb.push({x:0,y:0});
+    const mb = this.bullets[0]||{x:0,y:0};
+    return [
+      this.px/GW, this.py/GH,
+      near[0].x/GW, near[0].y/GH,
+      near[1].x/GW, near[1].y/GH,
+      near[2].x/GW, near[2].y/GH,
+      eb[0].x/GW, eb[0].y/GH,
+      eb[1].x/GW, eb[1].y/GH,
+      mb.x/GW, mb.y/GH,
+      live.length/36,
+      live.length ? Math.min(...live.map(a=>a.x))/GW : 0,
+      live.length ? Math.max(...live.map(a=>a.x+a.w))/GW : 0,
+      live.length ? Math.min(...live.map(a=>a.y))/GH : 0,
+      this.fireCD>0?1:0, this.dir
+    ];
+  }
+
+  step(action) {
+    let reward = 0.002;
+    this.tick++; this.fireCD = Math.max(0, this.fireCD-1);
+
+    if (action===0) this.px = Math.max(0, this.px-4);
+    if (action===1) this.px = Math.min(GW-this.pw, this.px+4);
+    if (action===2 && this.fireCD<=0) {
+      this.bullets.push({x:this.px+14, y:this.py-8, vy:-9});
+      this.fireCD = 13; reward += 0.05;
+    }
+
+    this.bullets = this.bullets.filter(b=>b.y>-10);
+    this.bullets.forEach(b=>b.y+=b.vy);
+    this.ebullets = this.ebullets.filter(b=>b.y<GH);
+    this.ebullets.forEach(b=>b.y+=4);
+
+    const live = this.aliens.filter(a=>a.alive);
+    let minX = Infinity, maxX = -Infinity;
+    live.forEach(a=>{ minX=Math.min(minX,a.x); maxX=Math.max(maxX,a.x+a.w); });
+    let drop = false;
+    if (maxX>=GW-6 && this.dir>0) { this.dir=-1; drop=true; }
+    if (minX<=6 && this.dir<0) { this.dir=1; drop=true; }
+    const spd = 0.6 + (36-live.length)*0.025;
+    this.aliens.forEach(a=>{ if(!a.alive) return; a.x+=this.dir*spd; if(drop) a.y+=14; });
+
+    this.eFire++;
+    if (this.eFire>35 && live.length>0) {
+      const s = live[Math.floor(Math.random()*live.length)];
+      this.ebullets.push({x:s.x+12, y:s.y+s.h}); this.eFire=0;
+    }
+
+    this.bullets.forEach(b=>{
+      this.aliens.forEach(a=>{
+        if(!a.alive||b.hit) return;
+        if(b.x>a.x&&b.x<a.x+a.w&&b.y>a.y&&b.y<a.y+a.h) {
+          a.alive=false; b.hit=true; this.score+=10; reward+=1.5;
+        }
+      });
+    });
+    this.bullets = this.bullets.filter(b=>!b.hit);
+
+    this.ebullets.forEach(b=>{
+      if(b.x>this.px&&b.x<this.px+this.pw&&b.y>this.py&&b.y<this.py+this.ph) {
+        this.alive=false; reward-=3;
+      }
+    });
+    live.forEach(a=>{ if(a.y+a.h>=this.py-5) { this.alive=false; reward-=3; } });
+    if(!live.some(a=>a.alive)) { reward+=8; this.alive=false; }
+
+    return { state: this.getState(), reward, done: !this.alive };
+  }
+
+  draw() {
+    const c = gctx;
+    c.fillStyle = '#000'; c.fillRect(0,0,GW,GH);
+
+    // Vignette
+    const vg = c.createRadialGradient(GW/2,GH/2,GW*0.3,GW/2,GH/2,GW*0.7);
+    vg.addColorStop(0,'transparent'); vg.addColorStop(1,'rgba(0,0,0,0.5)');
+    c.fillStyle=vg; c.fillRect(0,0,GW,GH);
+
+    // Ground line
+    c.strokeStyle='rgba(0,229,255,0.15)'; c.lineWidth=1;
+    c.beginPath(); c.moveTo(0,GH-30); c.lineTo(GW,GH-30); c.stroke();
+
+    // Shields
+    this.shields.forEach(sh=>{
+      for(let i=0;i<sh.cells.length;i++) {
+        if(!sh.cells[i]) continue;
+        const col = i%8, row = Math.floor(i/8);
+        c.fillStyle='rgba(0,229,255,0.5)';
+        c.fillRect(sh.x+col*7, sh.y+row*6, 6, 5);
+      }
+    });
+
+    // Player ship
+    const px=this.px, py=this.py;
+    c.fillStyle='#00e5ff';
+    c.fillRect(px+12,py,8,5);
+    c.fillRect(px+2,py+5,28,11);
+    c.fillRect(px,py+8,4,8); c.fillRect(px+28,py+8,4,8);
+    c.fillStyle='rgba(0,229,255,0.25)';
+    c.fillRect(px+4,py+11,24,4);
+
+    // Player bullets
+    this.bullets.forEach(b=>{
+      c.fillStyle='#00ffff';
+      c.shadowColor='#00ffff'; c.shadowBlur=8;
+      c.fillRect(b.x-1.5,b.y-6,3,10);
+      c.shadowBlur=0;
+    });
+
+    // Enemy bullets
+    this.ebullets.forEach(b=>{
+      c.fillStyle='#ff3c6e';
+      c.shadowColor='#ff3c6e'; c.shadowBlur=6;
+      c.fillRect(b.x-1.5,b.y,3,8);
+      c.shadowBlur=0;
+    });
+
+    // Aliens
+    const alienCols = ['#ff3c6e','#ff7c38','#ffcc00','#b8ff3c'];
+    this.aliens.forEach((a,i)=>{
+      if(!a.alive) return;
+      const col = alienCols[Math.min(a.r, 3)];
+      const phase = Math.floor(this.tick/12)%2;
+      c.fillStyle = col;
+      // Body
+      c.fillRect(a.x+3,a.y+3,22,12);
+      // Head
+      c.fillRect(a.x+8,a.y,12,4);
+      // Legs
+      if(phase===0) { c.fillRect(a.x,a.y+9,5,6); c.fillRect(a.x+23,a.y+9,5,6); }
+      else { c.fillRect(a.x+2,a.y+11,5,6); c.fillRect(a.x+21,a.y+11,5,6); }
+      // Eyes
+      c.fillStyle='#000';
+      c.fillRect(a.x+8,a.y+5,4,4); c.fillRect(a.x+16,a.y+5,4,4);
+    });
+
+    // HUD
+    c.fillStyle='rgba(0,229,255,0.9)'; c.font='bold 13px "Share Tech Mono"';
+    c.fillText(`SCORE: ${this.score}`, 10, 22);
+    c.fillText(`ALIENS: ${this.aliens.filter(a=>a.alive).length}`, GW-120, 22);
+  }
+}
+
+// ============================================================
+// AGENT LOOP
+// ============================================================
+const net = new Net(), targetNet = new Net();
+targetNet.copyFrom(net);
+const replay = { buf:[], push(e){ if(this.buf.length>=REPLAY_MAX)this.buf.shift(); this.buf.push(e); }, sample(n){ return Array.from({length:n},()=>this.buf[Math.floor(Math.random()*this.buf.length)]); }, get size(){return this.buf.length;} };
+const game = new SpaceInvaders();
+game.reset();
+let curState = game.getState();
+let epsilon = EPS_START;
+let episode=0, totalSteps=0, bestScore=0, running=false, paused=false;
+let avgLoss=0, lossCount=0;
+let lossHistory=[], rewardHistory=[];
+let lastQ=[0,0,0,0];
+let lastAction=3;
+let rafId=null, lastFpsTime=0, fpsFrames=0;
+
+const logEl = document.getElementById('log');
+function addLog(msg, cls='') {
+  const d = document.createElement('div'); d.className='log-line';
+  d.innerHTML = msg; logEl.appendChild(d);
+  if(logEl.children.length>200) logEl.removeChild(logEl.children[0]);
+  logEl.scrollTop=logEl.scrollHeight;
+}
+
+// ---- Charts ----
+function drawChart(canvasId, data, color, label) {
+  const canvas = document.getElementById(canvasId);
+  const cw = canvas.offsetWidth||240, ch = canvas.height;
+  canvas.width = cw;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0,0,cw,ch);
+  if(data.length<2) { ctx.fillStyle='rgba(74,96,112,0.4)'; ctx.font='10px Share Tech Mono'; ctx.fillText('Collecting data...', 8, ch/2+4); return; }
+  const mn = Math.min(...data), mx = Math.max(...data);
+  const range = mx-mn||1;
+  const pts = data.slice(-60);
+  const step = cw/(pts.length-1);
+  ctx.strokeStyle = color; ctx.lineWidth = 1.5;
+  ctx.shadowColor = color; ctx.shadowBlur = 4;
+  ctx.beginPath();
+  pts.forEach((v,i)=>{ const x=i*step, y=ch-4-(v-mn)/range*(ch-12); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+  ctx.stroke(); ctx.shadowBlur=0;
+  const grad = ctx.createLinearGradient(0,0,0,ch);
+  grad.addColorStop(0, color.replace(')',',0.15)').replace('rgb','rgba'));
+  grad.addColorStop(1,'transparent');
+  ctx.fillStyle = grad;
+  ctx.lineTo(cw,ch); ctx.lineTo(0,ch); ctx.fill();
+  ctx.fillStyle = color; ctx.font='9px Share Tech Mono';
+  ctx.fillText(label+': '+pts[pts.length-1].toFixed(3), 4, 10);
+}
+
+// ---- Neural Network Visualizer ----
+function drawNN() {
+  const canvas = document.getElementById('nn-canvas');
+  const cw = canvas.offsetWidth||240;
+  canvas.width = cw; canvas.height = 180;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0,0,cw,180);
+  const layers = [STATE_SIZE, HIDDEN, HIDDEN, 4];
+  const maxDots = 7;
+  const xs = [0.1,0.38,0.64,0.9].map(f=>f*cw);
+  const colors = ['#00e5ff','#b8ff3c','#b8ff3c','#ff7c38'];
+
+  function ny(li, ni, n) {
+    const vis = Math.min(n, maxDots);
+    return 12 + (ni / (vis-1||1)) * 150;
+  }
+
+  for(let li=0;li<layers.length-1;li++) {
+    const va=Math.min(layers[li],maxDots), vb=Math.min(layers[li+1],maxDots);
+    for(let a=0;a<va;a++) for(let b=0;b<vb;b++) {
+      ctx.beginPath(); ctx.strokeStyle='rgba(74,96,112,0.2)'; ctx.lineWidth=0.5;
+      ctx.moveTo(xs[li], ny(li,a,layers[li])); ctx.lineTo(xs[li+1], ny(li+1,b,layers[li+1]));
+      ctx.stroke();
+    }
+  }
+
+  const qMax = Math.max(...lastQ);
+  const actLabels = ['←','→','🔥','·'];
+  for(let li=0;li<layers.length;li++) {
+    const vis = Math.min(layers[li], maxDots);
+    for(let ni=0;ni<vis;ni++) {
+      const y = ny(li,ni,layers[li]);
+      const isActive = li===3 && lastQ[ni]===qMax;
+      ctx.beginPath(); ctx.arc(xs[li], y, li===3?5:3.5, 0, Math.PI*2);
+      ctx.fillStyle = isActive ? '#ffcc00' : colors[li];
+      ctx.shadowColor = isActive ? '#ffcc00' : colors[li];
+      ctx.shadowBlur = isActive ? 10 : 4;
+      ctx.fill(); ctx.shadowBlur=0;
+    }
+    if(li===3) {
+      for(let ni=0;ni<4;ni++) {
+        ctx.fillStyle = lastQ[ni]===qMax ? '#ffcc00' : 'rgba(74,96,112,0.8)';
+        ctx.font = '10px Share Tech Mono';
+        ctx.fillText(actLabels[ni], xs[li]+8, ny(li,ni,4)+4);
+      }
+    }
+    if(layers[li]>maxDots) {
+      ctx.fillStyle='rgba(74,96,112,0.7)'; ctx.font='9px Share Tech Mono';
+      ctx.fillText(`+${layers[li]-maxDots}`, xs[li]-8, 170);
+    }
+  }
+  const labels = ['State','H1','H2','Q'];
+  for(let li=0;li<4;li++) {
+    ctx.fillStyle='rgba(74,96,112,0.8)'; ctx.font='8px Share Tech Mono';
+    ctx.textAlign='center'; ctx.fillText(labels[li], xs[li], 178); ctx.textAlign='left';
+  }
+}
+
+function updateUI() {
+  document.getElementById('ep').textContent = episode;
+  document.getElementById('score').textContent = game.score;
+  document.getElementById('best').textContent = bestScore;
+  document.getElementById('steps').textContent = totalSteps;
+  document.getElementById('replay').textContent = replay.size;
+  const epsFrac = (epsilon-EPS_END)/(EPS_START-EPS_END);
+  document.getElementById('eps-text').textContent = epsilon.toFixed(3);
+  document.getElementById('eps-bar').style.width = (epsFrac*100).toFixed(1)+'%';
+  const qMax = Math.max(...lastQ);
+  for(let i=0;i<4;i++) {
+    document.getElementById('qv'+i).textContent = lastQ[i].toFixed(3);
+    document.getElementById('q'+i).classList.toggle('active', lastQ[i]===qMax);
+  }
+}
+
+function trainBatch() {
+  if(replay.size<BATCH) return 0;
+  const batch = replay.sample(BATCH);
+  let tl=0;
+  batch.forEach(({s,a,r,ns,done})=>{
+    const nq = targetNet.fwd(ns);
+    tl += net.train(s, a, done ? r : r+GAMMA*Math.max(...nq));
+  });
+  return tl/BATCH;
+}
+
+// ============================================================
+// MAIN LOOP
+// ============================================================
+function loop() {
+  if(!running||paused) return;
+  fpsFrames++;
+  const now = performance.now();
+  if(now-lastFpsTime>1000) {
+    document.getElementById('fps-counter').textContent = 'FPS: '+fpsFrames;
+    fpsFrames=0; lastFpsTime=now;
+  }
+
+  const speed = parseInt(document.getElementById('speed').value);
+  for(let s=0;s<speed;s++) {
+    lastQ = net.fwd(curState);
+    lastAction = Math.random()<epsilon ? Math.floor(Math.random()*4) : lastQ.indexOf(Math.max(...lastQ));
+    const {state:ns,reward,done} = game.step(lastAction);
+    replay.push({s:curState, a:lastAction, r:reward, ns, done});
+    curState = ns;
+    totalSteps++;
+    if(totalSteps%2===0) {
+      const l = trainBatch();
+      if(l>0) { avgLoss = avgLoss*0.92+l*0.08; lossCount++; }
+    }
+    if(totalSteps%TARGET_SYNC===0) targetNet.copyFrom(net);
+    if(totalSteps%30===0 && lossCount>0) lossHistory.push(avgLoss);
+    if(done) {
+      if(game.score>bestScore) bestScore=game.score;
+      rewardHistory.push(game.score);
+      const medal = game.score>=bestScore&&episode>0?' <span class="g">★ BEST</span>':'';
+      addLog(`<span class="t">Ep ${episode+1}</span> score=<span class="g">${game.score}</span> ε=${epsilon.toFixed(3)} steps=${totalSteps}${medal}`);
+      episode++; epsilon=Math.max(EPS_END,epsilon*EPS_DECAY);
+      game.reset(); curState=game.getState();
+    }
+  }
+
+  game.draw();
+  drawNN();
+  drawChart('loss-canvas', lossHistory, '#ff3c6e', 'loss');
+  drawChart('reward-canvas', rewardHistory, '#b8ff3c', 'score');
+  updateUI();
+  rafId = requestAnimationFrame(loop);
+}
+
+// ============================================================
+// CONTROLS
+// ============================================================
+document.getElementById('btn-train').addEventListener('click', ()=>{
+  running=true; paused=false;
+  document.getElementById('status-badge').textContent='TRAINING';
+  document.getElementById('status-badge').className='badge badge-cyan';
+  document.getElementById('status-dot').className='status-dot dot-green';
+  document.getElementById('status-text').textContent='Agent training — exploring environment';
+  if(!rafId) rafId=requestAnimationFrame(loop);
+});
+
+document.getElementById('btn-pause').addEventListener('click', ()=>{
+  paused=!paused;
+  const btn = document.getElementById('btn-pause');
+  btn.textContent = paused ? '▶ Resume' : '⏸ Pause';
+  document.getElementById('status-badge').textContent = paused ? 'PAUSED' : 'TRAINING';
+  document.getElementById('status-dot').className = 'status-dot '+(paused?'dot-red':'dot-green');
+  if(!paused&&running) rafId=requestAnimationFrame(loop);
+});
+
+document.getElementById('btn-reset').addEventListener('click', ()=>{
+  running=false; paused=false;
+  cancelAnimationFrame(rafId); rafId=null;
+  episode=0; totalSteps=0; bestScore=0; epsilon=EPS_START;
+  avgLoss=0; lossCount=0; lossHistory=[]; rewardHistory=[];
+  replay.buf.length=0;
+  net.l1=new Layer(STATE_SIZE,HIDDEN); net.l2=new Layer(HIDDEN,HIDDEN); net.l3=new Layer(HIDDEN,4);
+  targetNet.copyFrom(net);
+  game.reset(); curState=game.getState(); lastQ=[0,0,0,0];
+  logEl.innerHTML='';
+  document.getElementById('btn-pause').textContent='⏸ Pause';
+  document.getElementById('status-badge').textContent='IDLE';
+  document.getElementById('status-dot').className='status-dot dot-red';
+  document.getElementById('status-text').textContent='System reset — press Train to begin';
+  updateUI(); game.draw(); drawNN();
+  drawChart('loss-canvas',[],'#ff3c6e','loss');
+  drawChart('reward-canvas',[],'#b8ff3c','score');
+});
+
+document.getElementById('speed').addEventListener('input', e=>{
+  document.getElementById('speed-val').textContent = e.target.value+'×';
+});
+
+// ---- Model Storage (localStorage) ----
+document.getElementById('btn-save').addEventListener('click', ()=>{
+  const data = { weights: net.toJSON(), epsilon, episode, bestScore, lossHistory, rewardHistory, savedAt: new Date().toISOString() };
+  localStorage.setItem('dqn_model', JSON.stringify(data));
+  document.getElementById('model-info').innerHTML = `Saved at <span>${new Date().toLocaleTimeString()}</span><br>Episode <span>${episode}</span> · Best <span>${bestScore}</span>`;
+  addLog('<span class="g">Model saved to localStorage</span>');
+});
+
+document.getElementById('btn-load').addEventListener('click', ()=>{
+  const raw = localStorage.getItem('dqn_model');
+  if(!raw) { addLog('<span class="r">No saved model found</span>'); return; }
+  const data = JSON.parse(raw);
+  net.fromJSON(data.weights); targetNet.copyFrom(net);
+  epsilon=data.epsilon; episode=data.episode; bestScore=data.bestScore;
+  lossHistory=data.lossHistory||[]; rewardHistory=data.rewardHistory||[];
+  game.reset(); curState=game.getState();
+  document.getElementById('model-info').innerHTML = `Loaded from <span>${new Date(data.savedAt).toLocaleTimeString()}</span><br>Episode <span>${episode}</span> · Best <span>${bestScore}</span>`;
+  updateUI(); drawNN();
+  drawChart('loss-canvas', lossHistory, '#ff3c6e', 'loss');
+  drawChart('reward-canvas', rewardHistory, '#b8ff3c', 'score');
+  addLog(`<span class="g">Model loaded — ep=${episode} ε=${epsilon.toFixed(3)} best=${bestScore}</span>`);
+});
+
+document.getElementById('btn-export').addEventListener('click', ()=>{
+  const data = { weights: net.toJSON(), epsilon, episode, bestScore, lossHistory, rewardHistory, savedAt: new Date().toISOString() };
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  const a = document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=`dqn_model_ep${episode}.json`; a.click();
+  addLog(`<span class="g">Model exported: dqn_model_ep${episode}.json</span>`);
+});
+
+// ---- Initial render ----
+game.draw(); drawNN(); updateUI();
+drawChart('loss-canvas',[],'#ff3c6e','loss');
+drawChart('reward-canvas',[],'#b8ff3c','score');
+addLog('System ready. Press <span class="t">▶ Train</span> to start the DQN agent.');
+addLog('Architecture: State(20) → Dense(64) → Dense(64) → Q(4)');
+</script>
+</body>
+</html>
